@@ -56,18 +56,136 @@ Next, I will be working on the programming of the robot. I have already connecte
 Here's where you'll put images of your schematics. [Tinkercad](https://www.tinkercad.com/blog/official-guide-to-tinkercad-circuits) and [Fritzing](https://fritzing.org/learning/) are both great resoruces to create professional schematic diagrams, though BSE recommends Tinkercad becuase it can be done easily and for free in the browser. 
 
 # Code
-Here's where you'll put your code. The syntax below places it into a block of code. Follow the guide [here]([url](https://www.markdownguide.org/extended-syntax/)) to learn how to customize it to your project needs. 
+
+Arudino Nano 33 BLE Sense Code
 
 ```c++
+#include <Wire.h>
+#include <MPU6050_light.h> //This was the library I used after other ones didn't work. Best for if your MPU6050 is a clone!
+
+MPU6050 mpu(Wire);
+
+const float TILT_THRESHOLD = 35.0; //Controls the angle that the hand component must be turned for the signal to send. Measured in degrees. 
+char lastCommand = 'S';
+
 void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(9600);
-  Serial.println("Hello World!");
+  Serial.begin(9600); //I set the baud rate to 9600 but you can change this depending on your parts.
+  Serial1.begin(38400);
+  while (!Serial) delay(10);
+
+  Wire.begin();
+  mpu.begin();
+  Serial.println("Calibrating, keep sensor still...");
+  mpu.calcOffsets();
+  Serial.println("Master ready");
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  mpu.update();
 
+  float fwdBack = mpu.getAngleX();
+  float leftRight = mpu.getAngleY();
+
+  char command = 'S';
+
+  if (fwdBack > TILT_THRESHOLD) {
+    command = 'F';
+  } else if (fwdBack < -TILT_THRESHOLD) {
+    command = 'B';
+  } else if (leftRight > TILT_THRESHOLD) {
+    command = 'L';
+  } else if (leftRight < -TILT_THRESHOLD) {
+    command = 'R';
+  }
+
+  if (command != lastCommand) {
+    Serial1.println(command);
+    Serial.print("Sent: ");
+    Serial.println(command);
+    lastCommand = command;
+  }
+
+  delay(100);
+}
+```
+
+Arduino UNO Code
+
+```c++
+#include <SoftwareSerial.h>
+
+const int HC05_RX = 3;
+const int HC05_TX = 2;
+SoftwareSerial HC05(HC05_RX, HC05_TX);
+
+// Left motor pair
+const int ENA = 9;
+const int IN1 = 12;
+const int IN2 = 11;
+
+// Right motor pair
+const int ENB = 6;
+const int IN3 = 7;
+const int IN4 = 8;
+
+const int SPEED = 200; //Controls the speed. Max is 255
+
+void setup() {
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  stopMotors();
+
+  Serial.begin(9600);
+  HC05.begin(38400);
+  Serial.println("Slave ready");
+}
+
+void loop() {
+  if (HC05.available()) {
+    String message = HC05.readStringUntil('\n');
+    message.trim();
+    Serial.print("Received: ");
+    Serial.println(message);
+
+    if (message == "F") moveForward();
+    else if (message == "B") moveBackward();
+    else if (message == "L") turnLeft();
+    else if (message == "R") turnRight();
+    else stopMotors(); // "S" or anything unrecognised
+  }
+}
+
+void moveForward() {
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+  analogWrite(ENA, SPEED); analogWrite(ENB, SPEED);
+}
+
+void moveBackward() {
+  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
+  analogWrite(ENA, SPEED); analogWrite(ENB, SPEED);
+}
+
+void turnLeft() {
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
+  analogWrite(ENA, SPEED); analogWrite(ENB, SPEED);
+}
+
+void turnRight() {
+  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+  analogWrite(ENA, SPEED); analogWrite(ENB, SPEED);
+}
+
+void stopMotors() {
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
 }
 ```
 
