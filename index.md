@@ -31,19 +31,20 @@ For your final milestone, explain the outcome of your project. Key details to in
 
 # Second Milestone
 
-**Don't forget to replace the text below with the embedding for your milestone video. Go to Youtube, click Share -> Embed, and copy and paste the code to replace what's below.**
-
 <iframe width="560" height="315" src="https://www.youtube.com/embed/y3VAmNlER5Y" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
 
-For your second milestone, explain what you've worked on since your previous milestone. You can highlight:
-- Technical details of what you've accomplished and how they contribute to the final goal
-- What has been surprising about the project so far
-- Previous challenges you faced that you overcame
-- What needs to be completed before your final milestone 
+The second milestone connected both halves of the robot together in software: gesture/tilt detection, wireless communication between the hand and car components, and motor response on the car, working as one system.
+
+The hand controller uses an Arduino Nano 33 BLE Sense paired with an MPU6050 sensor to read tilt angles in real time. Once tilt passes a set threshold, the Nano sends a direction command over Bluetooth through a HC-05 Bluetooth module. A second HC-05, connected to the robot's Arduino Uno, picks up that command and converts it into signals for the L298N motor driver, which drives the robot and keeps updating as the hand position changes.
+
+Most of the difficulty was debugging across three layers: sensor, code, and wiring. The MPU6050 wouldn't connect at first, because the library I was using ran a strict device-ID check that clone sensor boards fail. Switching to a different library fixed it, but only after I confirmed with an I2C scanner that the sensor was actually responding. Tilt direction was also backwards for a while (for example, tilting forward triggered a left turn) which turned out to be the sensor's axes sitting rotated relative to how it was worn on the hand; remapping the axes in code solved it. A similar problem happened with the motors, where the physical wiring didn't line up with the pin numbers in the code, causing only one side of the robot’s wheels to turn. Checking my code and referring to the physical wiring of my robot helped me debug this problem. 
+
+With the base project finished, the next phase is implementing modifications to the robot!
+
 
 # First Milestone
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/RlMRTpZOGCI?si=NLlVs7gwaBFBDPS7" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+<iframe width="560" height="315" src="https://www.youtube.com/embed/nz8sKrfr17A?si=Cv7E18BcER7ZUywK" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 My first milestone consisted of assembling and wiring the robot chassis. I bolted four DC motors to the bottom frame and wired them into an L298N motor driver, which was in turn connected to an Arduino Uno responsible for direction and speed control. Power was supplied by two separate 9V batteries: one connected directly to the motor driver, the other to the Uno's barrel jack. Components were mounted with screws or tape depending on the part. To test if the car robot was working as intended, I programmed the robot to drive autonomously in a square pattern, which it did successfully. 
 
