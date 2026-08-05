@@ -17,15 +17,21 @@ In this project, I am building a hand-gesture controlled robot. Users can contro
   
 # Final Milestone
 
-**Don't forget to replace the text below with the embedding for your milestone video. Go to Youtube, click Share -> Embed, and copy and paste the code to replace what's below.**
+<iframe width="560" height="315" src="https://www.youtube.com/embed/FyMvqE007cM?si=BBMGPRLJ5k9idk1A" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/F7M7imOVGug" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+For the final milestone, I worked on adding modifications to my base project. 
 
-For your final milestone, explain the outcome of your project. Key details to include are:
-- What you've accomplished since your previous milestone
-- What your biggest challenges and triumphs were at BSE
-- A summary of key topics you learned about
-- What you hope to learn in the future after everything you've learned at BSE
+My first modification was making the hand module wireless, meaning it did not have to be attached to my laptop. This was done by attaching the breadboard’s positive and negative power rails to a breadboard power supply and attaching that breadboard power supply to a 9V battery. 
+
+My second modification was adding a speed boost mode. This modification was done entirely through code. I did this by adding a second tilt threshold with a larger minimum angle than the first tilt threshold. Thus, when my hand tilts past this angle, the rotations per second of the motors and wheels increases, making the car travel at a faster speed. 
+
+My final modification was an obstacle avoidance modification. I attached an ultrasonic sensor to the front of the car. If the ultrasonic sensor measures that the distance between the car and an obstacle is 15cm or less, the motors of the car stop and only allows the car to move backwards, avoiding the car from hitting the obstacle. 
+
+My biggest challenge during this milestone was getting the hand module to work wirelessly. Initially, the hand module’s bluetooth module would only send signals to the car’s bluetooth module if the Arduino Nano 33 BLE Sense Rev2 was plugged directly into my laptop. My mentor helped me catch this logic error and I was able to change the code so that it would send signals regardless. Another challenge I faced was with the obstacle avoidance modification. The robot would stop too late and hit the obstacle anyways. This was fixed by increasing the distance threshold that the motors would stop at.
+
+While my project is over, that doesn’t mean I cannot keep improving it! In the future, I would like to  transfer the car components to a better chassis as this one is slightly unstable, causing the motors and wheels to move around a lot. This means the steering and movement of the car is a little less accurate and smooth. 
+
+I really enjoyed this program and learned a lot! I improved my skills with programming Arduinos. I learned how to use and pair bluetooth modules. I learned how to wire breadboards with a lot of components. And so much more! 
 
 
 
@@ -61,17 +67,23 @@ Arudino Nano 33 BLE Sense Code
 
 ```c++
 #include <Wire.h>
-#include <MPU6050_light.h> //This was the library I used after other ones didn't work. Best for if your MPU6050 is a clone!
+#include <MPU6050_light.h> //used an alternative library since Adafruit didn't work with my accelerometer
 
 MPU6050 mpu(Wire);
 
-const float TILT_THRESHOLD = 35.0; //Controls the angle that the hand component must be turned for the signal to send. Measured in degrees. 
+const float TILT_THRESHOLD = 25.0;
+const float BOOST_THRESHOLD = 45.0; //speed boost modification threshold
+
 char lastCommand = 'S';
 
 void setup() {
-  Serial.begin(9600); //I set the baud rate to 9600 but you can change this depending on your parts.
+  Serial.begin(9600);
   Serial1.begin(38400);
-  while (!Serial) delay(10);
+
+  unsigned long start = millis();
+  while (!Serial && millis() - start < 3000) {
+    delay(10);
+  }
 
   Wire.begin();
   mpu.begin();
@@ -88,7 +100,12 @@ void loop() {
 
   char command = 'S';
 
-  if (fwdBack > TILT_THRESHOLD) {
+  // Check boost first, since it's a stricter/further condition than normal tilt
+  if (fwdBack > BOOST_THRESHOLD) {
+    command = 'G'; // boost forward
+  } else if (fwdBack < -BOOST_THRESHOLD) {
+    command = 'H'; // boost backward
+  } else if (fwdBack > TILT_THRESHOLD) {
     command = 'F';
   } else if (fwdBack < -TILT_THRESHOLD) {
     command = 'B';
@@ -118,25 +135,30 @@ const int HC05_RX = 3;
 const int HC05_TX = 2;
 SoftwareSerial HC05(HC05_RX, HC05_TX);
 
-// Left motor pair
 const int ENA = 9;
 const int IN1 = 12;
 const int IN2 = 11;
-
-// Right motor pair
 const int ENB = 6;
 const int IN3 = 7;
 const int IN4 = 8;
 
-const int SPEED = 200; //Controls the speed. Max is 255
+const int NORMAL_SPEED = 150;
+const int BOOST_SPEED = 255;
+
+// Ultrasonic sensor
+const int TRIG_PIN = 4;
+const int ECHO_PIN = 5;
+const int OBSTACLE_DISTANCE = 15; // in cm... tune this based on testing
+
+char currentCommand = 'S'; 
+unsigned long lastDistanceCheck = 0;
+const unsigned long DISTANCE_CHECK_INTERVAL = 100; // in ms
 
 void setup() {
-  pinMode(ENA, OUTPUT);
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(ENB, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
+  pinMode(ENA, OUTPUT); pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
   stopMotors();
 
   Serial.begin(9600);
@@ -145,42 +167,81 @@ void setup() {
 }
 
 void loop() {
+  // Handle incoming Bluetooth commands
   if (HC05.available()) {
     String message = HC05.readStringUntil('\n');
     message.trim();
     Serial.print("Received: ");
     Serial.println(message);
 
-    if (message == "F") moveForward();
-    else if (message == "B") moveBackward();
-    else if (message == "L") turnLeft();
-    else if (message == "R") turnRight();
-    else stopMotors(); // "S" or anything unrecognised
+    if (message.length() > 0) {
+      currentCommand = message.charAt(0);
+      executeCommand(currentCommand);
+    }
+  }
+
+  // Continuously check distance, independent of incoming messages
+  if (millis() - lastDistanceCheck >= DISTANCE_CHECK_INTERVAL) {
+    lastDistanceCheck = millis();
+    long distance = getDistanceCM();
+
+    bool movingForward = (currentCommand == 'F' || currentCommand == 'G');
+
+    if (movingForward && distance > 0 && distance < OBSTACLE_DISTANCE) {
+      Serial.print("Obstacle detected at ");
+      Serial.print(distance);
+      Serial.println("cm — stopping");
+      stopMotors();
+    }
   }
 }
 
-void moveForward() {
+void executeCommand(char command) {
+  if (command == 'F') moveForward(NORMAL_SPEED);
+  else if (command == 'G') moveForward(BOOST_SPEED);
+  else if (command == 'B') moveBackward(NORMAL_SPEED);
+  else if (command == 'H') moveBackward(BOOST_SPEED);
+  else if (command == 'L') turnLeft(NORMAL_SPEED);
+  else if (command == 'R') turnRight(NORMAL_SPEED);
+  else stopMotors();
+}
+
+long getDistanceCM() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout
+  if (duration == 0) return -1; // no echo received
+
+  long distance = duration * 0.034 / 2; // speed of sound conversion
+  return distance;
+}
+
+void moveForward(int speed) {
   digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
   digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
-  analogWrite(ENA, SPEED); analogWrite(ENB, SPEED);
+  analogWrite(ENA, speed); analogWrite(ENB, speed);
 }
 
-void moveBackward() {
+void moveBackward(int speed) {
   digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
   digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
-  analogWrite(ENA, SPEED); analogWrite(ENB, SPEED);
+  analogWrite(ENA, speed); analogWrite(ENB, speed);
 }
 
-void turnLeft() {
+void turnLeft(int speed) {
   digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
   digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
-  analogWrite(ENA, SPEED); analogWrite(ENB, SPEED);
+  analogWrite(ENA, speed); analogWrite(ENB, speed);
 }
 
-void turnRight() {
+void turnRight(int speed) {
   digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
   digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
-  analogWrite(ENA, SPEED); analogWrite(ENB, SPEED);
+  analogWrite(ENA, speed); analogWrite(ENB, speed);
 }
 
 void stopMotors() {
@@ -209,9 +270,6 @@ void stopMotors() {
 
 
 # Other Resources/Examples
-One of the best parts about Github is that you can view how other people set up their own work. Here are some past BSE portfolios that are awesome examples. You can view how they set up their portfolio, and you can view their index.md files to understand how they implemented different portfolio components.
-- [Example 1](https://trashytuber.github.io/YimingJiaBlueStamp/)
-- [Example 2](https://sviatil0.github.io/Sviatoslav_BSE/)
-- [Example 3](https://arneshkumar.github.io/arneshbluestamp/)
-
-To watch the BSE tutorial on how to create a portfolio, click here.
+- [Using HC05 to Communicate to HC05 - Document](https://docs.google.com/document/d/1EpnEPulXQwPDSK-nKLohqPjpeXNteP2G/edit)
+- [How to pair HC-05 Bluetooth Modules - Youtube](https://www.youtube.com/watch?si=-l2P5rZ5elWILJch&v=BXXAcFOTnBo&feature=youtu.be)
+- [Car Chassis Kit Setup Video - Youtube](https://youtu.be/9ibnSe1dXdE?si=svh3OIH5EyhMfN34)
