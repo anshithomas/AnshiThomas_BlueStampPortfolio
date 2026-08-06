@@ -55,7 +55,7 @@ Next, I will be working on the programming of the robot. I have already connecte
 
 # Schematics 
 ![Hand module Schematic](handschematics.jpeg)
-![Car module Schematic](carshematics.jpeg)
+![Car module Schematic](carschematics.jpeg)
 
 # Code
 
